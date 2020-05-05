@@ -36,6 +36,7 @@ def webdriver_get_from_web():
             data.append(data_val)
             print(data_val)
             num_countries_to_send += 1
+    driver.close()
     return data
 
 
