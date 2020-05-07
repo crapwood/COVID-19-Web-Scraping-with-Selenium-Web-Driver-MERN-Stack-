@@ -1,11 +1,17 @@
-from django.shortcuts import render
-from django.http import HttpResponse, JsonResponse
-from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
 from selenium import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
+import pymongo
+from pymongo import MongoClient
+import os
+import threading
 
 
-# Create your views here.
+cluster = MongoClient(f"mongodb+srv://jjbe93:{os.environ.get('MONGODB_PW')}@cluster0-movcq.mongodb.net/test?retryWrites=true&w=majority")
+db = cluster["leaders_test"]
+collection = db["worldometers_covid19_table"]
+
+
 def webdriver_get_from_web():
     driver = webdriver.Chrome(ChromeDriverManager().install())
     driver.implicitly_wait(10)
@@ -16,15 +22,12 @@ def webdriver_get_from_web():
     data = []
     countries = []
     filter_countries = driver.find_elements_by_class_name("mt_a")
-    num_countries = 1
     for c in filter_countries:
-        if c.text != "" and num_countries < 51:
+        if c.text != "":
             countries.append(c.text)
-        num_countries += 1
 
-    num_countries_to_send = 1
     for country in countries:
-        if num_countries_to_send < 51:
+        if country != "":
             # getting country row out
             xpath = f"//td[contains(., '{country}')]"
             country_element = table.find_element_by_xpath(xpath)
@@ -35,11 +38,27 @@ def webdriver_get_from_web():
             data_val = [x.text for x in col_data]
             data.append(data_val)
             print(data_val)
-            num_countries_to_send += 1
     driver.close()
-    return data
+    # Inserting all the scraped data from web to our DB
+    for i in range(len(data)):
+        key = {"Country": data[i][0]}
+        value = {
+            "Country": data[i][0],
+            "Total_Cases": data[i][1],
+            "New_Cases": data[i][2],
+            "Total_Deaths": data[i][3],
+            "New_Deaths": data[i][4],
+            "Total_Recovered": data[i][5],
+            "Active_Cases": data[i][6],
+            "Critical_Cases": data[i][7],
+            "Total_Tests": data[i][10]
+        }
+        collection.update_one(key, {"$set": value}, upsert=True)
 
 
 def getInfo(request):
-    data = webdriver_get_from_web()
+    t1 = threading.Thread(target=webdriver_get_from_web)
+    t1.start()
+    # data = webdriver_get_from_web()
+    data = list(collection.find({}, {'_id': 0}))
     return JsonResponse({"data": data})
